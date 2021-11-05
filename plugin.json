@@ -1,0 +1,12 @@
+{
+  "ID": "494b025d-ae90-4a32-97a4-0e03e4e7ef63",
+  "ActionKeyword": "audio",
+  "Name": "wox-audio",
+  "Description": "Audio control for Wox using powershell",
+  "Author": "cfe84",
+  "Version": "1.0.0",
+  "Language": "executable",
+  "Website": "http://nothing.com",
+  "IcoPath": "img\\logo.jpg",
+  "ExecuteFileName": "run.bat"
+}
