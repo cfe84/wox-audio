@@ -1,14 +1,15 @@
 import { IWoxQueryHandler, JsonRPCAction, Logger, Result, ResultItem } from "wox-ts"
 import * as fs from "fs"
 import { exec } from "child_process"
+import { Consts } from "./Consts"
 
 export interface RenameMeHandlerDeps {
   logger: Logger
 }
 
-const METHOD_SET_OUT = "set out"
+const METHOD_SET = "set"
 const METHOD_INVALID = "INVALID"
-const COMMAND_SET_OUT = "out"
+const COMMAND_SET = "set"
 
 interface ExecResult {
   stdOut: string,
@@ -39,37 +40,54 @@ const execAsync = (command: string): Promise<ExecResult> => {
 export class AudioHandler implements IWoxQueryHandler {
   constructor(private deps: RenameMeHandlerDeps) { }
 
-
-
   private async getOutputDevicesAsync(command: string): Promise<ResultItem[]> {
-    const devicesRes = await execAsync('Get-AudioDevice -list | Where-Object Type -EQ "Playback" | ConvertTo-Json')
+    let filter = ""
+    if (command.indexOf(`out`) >= 0 || command.indexOf(`speak`) >= 0) {
+      filter = " | Where-Object Type -EQ 'Playback'"
+    } else if (command.indexOf(`in`) >= 0 || command.indexOf(`mic`) >= 0) {
+      filter = " | Where-Object Type -EQ 'Recording'"
+    }
+    const devicesRes = await execAsync(`powershell "Get-AudioDevice -list ${filter} | ConvertTo-Json"`)
+    if (devicesRes.stdErr) {
+      this.deps.logger.log(`Error getting device: ${devicesRes.stdErr}`)
+    }
     const devices = JSON.parse(devicesRes.stdOut) as Device[]
-    return devices.filter(device => !device.Default).map((device) => {
-      const deviceResult =
-      {
-        Title: `Set ${device.Name} as default`,
-        Subtitle: command,
-        IcoPath: "img/logo.jpg",
-        JsonRPCAction: {
-          method: METHOD_SET_OUT,
-          parameters: [device.ID]
+    return devices
+      .sort((a, b) => a.Type.localeCompare(b.Type))
+      .filter(device => !device.Default).map((device) => {
+        const deviceType = device.Type === "Playback"
+          ? "speaker"
+          : "microphone"
+        const deviceLogo = device.Type === "Playback"
+          ? Consts.img.speaker
+          : Consts.img.microphone
+        const deviceResult: ResultItem =
+        {
+          Title: `Use ${device.Name} as default ${deviceType}`,
+          Subtitle: "Set default audio device",
+          IcoPath: deviceLogo,
+          JsonRPCAction: {
+            method: METHOD_SET,
+            parameters: [device.ID]
+          }
         }
-      }
-      return deviceResult
-    })
+        return deviceResult
+      })
 
   }
 
-  private setOutputDevice(deviceId: string) {
-
+  private async setOutputDevice(deviceId: string) {
+    const res = await execAsync(`powershell "Set-AudioDevice -ID '${deviceId}'"`)
+    if (res.stdErr) {
+      this.deps.logger.log(`Error setting device: ${res.stdErr}`)
+    }
   }
 
   async processAsync(rpcAction: JsonRPCAction): Promise<Result> {
-    if (rpcAction.method === METHOD_SET_OUT) {
+    if (rpcAction.method === METHOD_SET) {
       this.setOutputDevice(rpcAction.parameters[0])
     } else if (rpcAction.method !== METHOD_INVALID) {
-      this.deps.logger.log(rpcAction.parameters[0])
-      if (rpcAction.parameters[0].startsWith(COMMAND_SET_OUT)) {
+      if (rpcAction.parameters[0].startsWith(COMMAND_SET)) {
         return {
           result: await this.getOutputDevicesAsync(rpcAction.parameters[0])
         }
